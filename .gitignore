@@ -1,0 +1,49 @@
+# Virtual environments
+venv/
+.venv/
+gpt_env/
+env/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+set-env.ps1
+secrets.json
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Generated outputs
+*.pdf
+!docs/**/*.pdf
+
+# Logs & local DB dumps
+*.log
+*.sqlite
+*.db
+
+# Cursor / local assets (optional screenshots)
+assets/
+
+# To exclude the sample DB and link to the upstream repo instead, uncomment:
+# sample_db.sql
