@@ -6,6 +6,7 @@ env/
 
 # Secrets — never commit
 .env
+.env.example
 .env.*
 !.env.example
 set-env.ps1
@@ -46,4 +47,4 @@ Thumbs.db
 assets/
 
 # To exclude the sample DB and link to the upstream repo instead, uncomment:
-# sample_db.sql
+sample_db.sql
