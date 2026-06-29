@@ -11,8 +11,6 @@ Sample data is from [Condo Cube](https://condo-cube.com/) and covers these marke
 - Miami Beach
 - South of Fifth
 
-Based on the original [GGyll/condo_gpt](https://github.com/GGyll/condo_gpt) project.
-
 ## Features
 
 - Natural language interface for querying condo data
