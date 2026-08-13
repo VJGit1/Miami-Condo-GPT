@@ -1,0 +1,72 @@
+tables:
+  - name: core_condobuilding
+    use_when: Building metadata, addresses, alt_name, lat/lon, approval status, market link
+    join_keys:
+      - market_id -> core_condomarket.id
+      - id <- core_condounit.building_id
+    key_columns:
+      - address
+      - alt_name
+      - approved
+      - lat
+      - lon
+      - year_built
+      - units
+      - market_id
+    filters: "approved = TRUE; exclude market Miami-Dade unless asked"
+
+  - name: core_condomarket
+    use_when: Market/ neighborhood rollups (Brickell, South Beach, Aventura)
+    join_keys:
+      - id <- core_condobuilding.market_id
+    key_columns:
+      - name
+      - sales_volume
+
+  - name: core_condosale
+    use_when: Sale transactions, prices, closing dates
+    join_keys:
+      - condo_unit_id -> core_condounit.id
+    key_columns:
+      - sale_price
+      - closing_date
+      - blacklist
+      - condo_unit_id
+    filters: "blacklist = FALSE unless analyzing blacklist"
+
+  - name: core_condounit
+    use_when: Unit attributes — beds, baths, sf, unit_no, building link
+    join_keys:
+      - building_id -> core_condobuilding.id
+      - id <- core_condosale.condo_unit_id
+    key_columns:
+      - unit_no
+      - beds
+      - sf
+      - blacklist
+      - building_id
+
+  - name: core_principal
+    use_when: Buyer/seller names — sensitive; prefer aggregates
+    join_keys:
+      - id <- core_condosale_buyers.principal_id
+    key_columns:
+      - name
+
+  - name: core_condosale_buyers
+    use_when: Link sales to buyer principals
+    join_keys:
+      - condosale_id -> core_condosale.id
+      - principal_id -> core_principal.id
+
+  - name: core_condosale_sellers
+    use_when: Link sales to seller principals
+    join_keys:
+      - condosale_id -> core_condosale.id
+      - principal_id -> core_principal.id
+
+  - name: core_condounit_current_owners
+    use_when: Current ownership links
+    join_keys:
+      - condounit_id -> core_condounit.id
+      - principal_id -> core_principal.id

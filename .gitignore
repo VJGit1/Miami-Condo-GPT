@@ -1,6 +1,7 @@
 # Virtual environments
 venv/
 .venv/
+.venv311/
 gpt_env/
 env/
 
@@ -43,8 +44,19 @@ Thumbs.db
 *.sqlite
 *.db
 
+# Eval outputs
+evals/results/*.json
+evals/results/*.jsonl
+!evals/results/.gitkeep
+
+# P1 retrieval / cache artifacts
+condo_gpt/retrieval/artifacts/
+condo_gpt/cache/cache.sqlite
+logs/
+
 # Cursor / local assets (optional screenshots)
 assets/
 
-# To exclude the sample DB and link to the upstream repo instead, uncomment:
-sample_db.sql
+# Sample dump is tracked so README import instructions work.
+# Uncomment to keep it out of git:
+# sample_db.sql
