@@ -83,6 +83,57 @@ def test_hitl_reject_leaves_db_untouched():
     assert db.calls == []
 
 
+def test_hitl_approve_retry_uses_hard_model():
+    """Aggregation retries after HITL must keep llm_hard, matching the live graph."""
+    import json
+    from types import SimpleNamespace
+
+    class RecordingLLM:
+        def __init__(self, name):
+            self.name = name
+            self.calls = 0
+
+        def invoke(self, messages):
+            self.calls += 1
+            sql = (
+                "SELECT SUM(s.sale_price) FROM core_condosale s "
+                "JOIN core_condounit u ON s.condo_unit_id = u.id "
+                "JOIN core_condobuilding b ON u.building_id = b.id "
+                "WHERE b.approved = TRUE AND s.blacklist = FALSE LIMIT 100"
+            )
+            return SimpleNamespace(
+                content=json.dumps({"sql": sql, "rationale": self.name}),
+                response_metadata={},
+            )
+
+    class EmptyThenOkDB:
+        def __init__(self):
+            self.calls = 0
+
+        def run(self, sql):
+            self.calls += 1
+            if self.calls == 1:
+                return "[]"
+            return "[(1234567,)]"
+
+    reset_sinks()
+    llm = RecordingLLM("soft")
+    llm_hard = RecordingLLM("hard")
+    db = EmptyThenOkDB()
+    pending = {
+        "run_id": "hitl-retry-hard",
+        "question": "Total sales volume for 2023 approved buildings",
+        "route": "sql_qa",
+        "planned_sql": "SELECT SUM(s.sale_price) FROM core_condosale s LIMIT 100",
+        "retry_count": 0,
+    }
+    final = resume_after_approval(pending, db=db, llm=llm, llm_hard=llm_hard)
+    assert not final.get("pending_approval")
+    assert llm_hard.calls == 1
+    assert llm.calls == 0
+    assert db.calls == 2
+
+
 def test_hitl_approve_resumes_and_cites():
     reset_sinks()
     db = FakeDB()

@@ -149,7 +149,9 @@ def run_graph(
     return graph.invoke(state)
 
 
-def resume_after_approval(pending_state: AgentState, *, db=None, llm=None) -> AgentState:
+def resume_after_approval(
+    pending_state: AgentState, *, db=None, llm=None, llm_hard=None
+) -> AgentState:
     """Resume from execute after HITL approval."""
     pending_state["approved"] = True
     pending_state["needs_hitl"] = False
@@ -158,7 +160,7 @@ def resume_after_approval(pending_state: AgentState, *, db=None, llm=None) -> Ag
     state = execute_node(pending_state, db=db)
     state = critique_node(state)
     if not state.get("critique_ok") and state.get("retry_count", 0) < 2:
-        state = plan_sql_node(state, llm=llm)
+        state = plan_sql_node(state, llm=llm, llm_hard=llm_hard)
         state = validate_node(state)
         if state.get("sql_valid") and not state.get("sql_blocked"):
             state = execute_node(state, db=db)

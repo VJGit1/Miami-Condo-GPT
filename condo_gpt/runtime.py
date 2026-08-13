@@ -233,10 +233,12 @@ def approve_agent(
             prompt_version=settings.prompt_version,
         )
 
-    _, db, llm, _ = _get_stack()
+    _, db, llm, llm_hard = _get_stack()
     with timed_run({"run_id": run_id, "hitl": "approved"}) as ctx:
         try:
-            final_state = resume_after_approval(pending, db=db, llm=llm)
+            final_state = resume_after_approval(
+                pending, db=db, llm=llm, llm_hard=llm_hard
+            )
         except Exception as exc:
             return AgentResponse(
                 run_id=run_id,
