@@ -1,0 +1,10 @@
+documents:
+  - file: shore_club_offering.txt
+    building: Shore Club
+    description: Sample offering plan excerpt — amenities and rental rules
+  - file: continuum_hoa_rules.txt
+    building: Continuum South Beach
+    description: Sample HOA pet and amenity policies
+  - file: faena_house_amenities.txt
+    building: Faena House
+    description: Sample amenities and service descriptions

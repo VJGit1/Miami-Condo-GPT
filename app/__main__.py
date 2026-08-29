@@ -1,11 +1,6 @@
-"""Launcher — `python server.py` or `python -m app`."""
-
-from __future__ import annotations
-
-import os
-
 from app.server import app
 from condo_gpt.config import get_settings
+import os
 
 if __name__ == "__main__":
     settings = get_settings()
