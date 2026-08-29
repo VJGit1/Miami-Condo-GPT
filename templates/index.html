@@ -21,7 +21,7 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        min-height: 100vh;
+        height: 100vh;
       }
       .container {
         width: 100%;
@@ -39,18 +39,16 @@
       form {
         display: flex;
         margin-bottom: 20px;
-        flex-wrap: wrap;
-        gap: 8px;
       }
       input[type="text"] {
         flex-grow: 1;
-        min-width: 200px;
         padding: 15px;
         border: 1px solid #555;
         background-color: #40414f;
         color: #d1d5db;
         border-radius: 5px;
         font-size: 16px;
+        margin-right: 10px;
       }
       input[type="submit"] {
         padding: 15px 20px;
@@ -64,12 +62,6 @@
       input[type="submit"]:hover {
         background-color: #0e8d6d;
       }
-      .btn-reject {
-        background-color: #b91c1c;
-      }
-      .btn-reject:hover {
-        background-color: #991b1b;
-      }
       .result,
       .conversation-history {
         background-color: #40414f;
@@ -77,44 +69,6 @@
         border-radius: 10px;
         margin-bottom: 20px;
         color: #d1d5db;
-      }
-      .banner {
-        padding: 12px 16px;
-        border-radius: 8px;
-        margin-bottom: 16px;
-        font-size: 14px;
-      }
-      .banner-warn {
-        background: #78350f;
-        border: 1px solid #f59e0b;
-      }
-      .banner-info {
-        background: #1e3a5f;
-        border: 1px solid #3b82f6;
-      }
-      .banner-success {
-        background: #14532d;
-        border: 1px solid #22c55e;
-      }
-      .badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 12px;
-        margin-left: 6px;
-      }
-      .badge-cache {
-        background: #22c55e;
-        color: #052e16;
-      }
-      .badge-cost {
-        background: #6366f1;
-        color: #fff;
-      }
-      .hitl-actions {
-        display: flex;
-        gap: 10px;
-        margin-top: 12px;
       }
       .result h2,
       .conversation-history h2 {
@@ -143,25 +97,6 @@
         border-radius: 5px;
         color: #d1d5db;
       }
-      .meta {
-        font-size: 12px;
-        color: #9ca3af;
-        text-align: center;
-        margin-bottom: 12px;
-      }
-      .run-meta {
-        font-size: 12px;
-        color: #9ca3af;
-      }
-      .doc-citation {
-        font-size: 14px;
-        border-left: 3px solid #10a37f;
-        padding-left: 10px;
-        margin: 8px 0;
-      }
-      #map {
-        min-height: 420px;
-      }
     </style>
   </head>
   <body>
@@ -174,49 +109,6 @@
         height="200"
       />
       <h1>CondoGPT</h1>
-      <p class="meta">
-        prompt={{ prompt_version or 'p1-v1' }}
-        {% if run_id %} · run_id={{ run_id }}{% endif %}
-        {% if session_cost is defined %}
-        · session ${{ '%.4f'|format(session_cost) }} / ${{ '%.2f'|format(max_session_cost) }}
-        {% endif %}
-        {% if api_key_required %} · API key required for /api/*{% endif %}
-      </p>
-
-      {% if response and response.confidence is not none and response.confidence < 0.5 %}
-      <div class="banner banner-warn">
-        Low confidence ({{ '%.0f'|format(response.confidence * 100) }}%) — verify SQL citations before acting.
-      </div>
-      {% endif %}
-
-      {% if response and response.cache_hit %}
-      <div class="banner banner-success">
-        Cache hit — repeated question served from semantic cache ($0).
-      </div>
-      {% elif response and response.est_cost_usd is not none %}
-      <div class="banner banner-info">
-        Estimated cost: ${{ '%.4f'|format(response.est_cost_usd) }}
-        <span class="badge badge-cost">tokens {{ response.prompt_tokens or 0 }}/{{ response.completion_tokens or 0 }}</span>
-      </div>
-      {% endif %}
-
-      {% if response and response.status == 'pending_approval' %}
-      <div class="banner banner-warn">
-        <strong>Approval required</strong> — high-stakes SQL pending review.
-        {% if response.pending_rationale %}<br />{{ response.pending_rationale }}{% endif %}
-        <form method="POST" class="hitl-actions">
-          <input type="hidden" name="approve_run_id" value="{{ response.run_id }}" />
-          <input type="hidden" name="approve_action" value="approve" />
-          <input type="submit" value="Approve SQL" />
-        </form>
-        <form method="POST" class="hitl-actions">
-          <input type="hidden" name="approve_run_id" value="{{ response.run_id }}" />
-          <input type="hidden" name="approve_action" value="reject" />
-          <input type="submit" value="Reject" class="btn-reject" />
-        </form>
-      </div>
-      {% endif %}
-
       <form method="POST">
         <input
           type="text"
@@ -230,7 +122,7 @@
       <div class="result">
         <h2>Result:</h2>
         {% for res in result %}
-        <div class="markdown-content">{{ res|safe }}</div>
+        <p>{{ res }}</p>
         <br />
         {% endfor %}
       </div>
@@ -241,7 +133,7 @@
         <div class="conversation-entry">
           <p class="question">Q: {{ entry.question }}</p>
           <div class="markdown-content">
-            <p>A: {{ entry.answer|safe }}</p>
+            <p>A: {{ entry.answer }}</p>
           </div>
         </div>
         {% endfor %}
