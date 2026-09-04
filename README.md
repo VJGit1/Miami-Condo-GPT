@@ -130,12 +130,11 @@ Open [http://localhost:5000](http://localhost:5000) in your browser.
 
 - `server.py` — Flask web server and session memory
 - `main.py` — LangGraph ReAct agent orchestration and stream processing
-- `tools.py` — The 6 active agent tools (Safe SQL, FAISS, Places, Geocoding, Directions, Safe PDF)
+- `tools.py` — The active agent tools (Safe SQL, FAISS, Places, Geocoding, Directions)
 - `sql_gateway.py` — AST-based SQL security gateway and statement timeout manager
-- `renderers.py` — Deterministic PDF builder and HTML sanitizer
 - `prefix.py` — System prompt and domain rules
 - `boilerplate.py` — Few-shot SQL holding period templates
-- `tests/` — Automated test suite covering SQL Gateway, tool schemas, and PDF generation
+- `tests/` — Automated test suite covering SQL Gateway, tool schemas, and security sandbox
 - `sample_db.sql` — PostgreSQL sample dataset
 
 ## Running Automated Tests
