@@ -108,13 +108,41 @@ Open [http://localhost:5000](http://localhost:5000) in your browser.
 - Add a fourth column with the median sales price for each building
 - Replace the third column with the closest school to the building, and the fourth column with the driving distance to that school from the building
 
+## Architecture: The 3 Core Pillars
+
+1. **Robust SQL Gateway (`sql_gateway.py`)**:
+   - AST validation via `sqlparse` ensuring only `SELECT` and `WITH ... SELECT` queries execute.
+   - Comprehensive blacklist blocking DML (`INSERT`, `UPDATE`, `DELETE`), DDL (`DROP`, `ALTER`, `TRUNCATE`), and unsafe functions (`PG_SLEEP`, `DBLINK`).
+   - Enforced `LIMIT` capping to prevent database memory exhaustion.
+   - Query isolation with `SET LOCAL statement_timeout` inside transactional connections.
+
+2. **Safe Artifact Generation (`renderers.py`)**:
+   - Zero `exec()` arbitrary code execution.
+   - Deterministic ReportLab PDF generation via the `generate_pdf_report` tool.
+   - Clean HTML sanitization for Chart.js and Google Maps widgets.
+
+3. **Multi-Tool ReAct Agent (`main.py` + `tools.py`)**:
+   - Powered by LangGraph's ReAct execution engine with OpenAI `gpt-4o-mini`.
+   - Real FAISS vector index (`search_proper_nouns`) for fuzzy entity resolution and address matching.
+   - Live Google Places, Geocoding, and Directions API tools for geospatial intelligence.
+
 ## Project Structure
 
-- `server.py` — Flask web server
-- `main.py` — Agent orchestration and response processing
-- `tools.py` — SQL, FAISS, and Google Maps tools
-- `prefix.py` — System prompt and domain rules for the agent
-- `boilerplate.py` — Map and SQL templates injected into the prompt
+- `server.py` — Flask web server and session memory
+- `main.py` — LangGraph ReAct agent orchestration and stream processing
+- `tools.py` — The 6 active agent tools (Safe SQL, FAISS, Places, Geocoding, Directions, Safe PDF)
+- `sql_gateway.py` — AST-based SQL security gateway and statement timeout manager
+- `renderers.py` — Deterministic PDF builder and HTML sanitizer
+- `prefix.py` — System prompt and domain rules
+- `boilerplate.py` — Few-shot SQL holding period templates
+- `tests/` — Automated test suite covering SQL Gateway, tool schemas, and PDF generation
 - `sample_db.sql` — PostgreSQL sample dataset
-- `.env.example` — Template for required environment variables
+
+## Running Automated Tests
+
+Run the test suite using Python's built-in test runner:
+
+```powershell
+python -m unittest discover -s tests -v
+```
 
