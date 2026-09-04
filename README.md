@@ -15,9 +15,10 @@ Sample data is from [Condo Cube](https://condo-cube.com/) and covers these marke
 
 - Natural language interface for querying condo data
 - Dynamic SQL generation via a LangGraph ReAct agent
+- AST-based SQL security gateway with statement timeouts
 - Google Maps integration for schools, geocoding, and driving distances
 - Interactive maps and Chart.js graphs in the browser
-- PDF report generation with ReportLab
+- Sandboxed execution for automated PDF reporting with ReportLab
 
 ## Technologies
 
@@ -116,10 +117,10 @@ Open [http://localhost:5000](http://localhost:5000) in your browser.
    - Enforced `LIMIT` capping to prevent database memory exhaustion.
    - Query isolation with `SET LOCAL statement_timeout` inside transactional connections.
 
-2. **Safe Artifact Generation (`renderers.py`)**:
-   - Zero `exec()` arbitrary code execution.
-   - Deterministic ReportLab PDF generation via the `generate_pdf_report` tool.
-   - Clean HTML sanitization for Chart.js and Google Maps widgets.
+2. **Sandboxed Code Execution (`main.py`)**:
+   - Dynamic ReportLab code generation for custom, automated PDF reports.
+   - Security scanner (`detect_malicious_code`) detecting and blocking hazardous OS, subprocess, and network calls.
+   - Dynamic HTML extraction and sanitization for Chart.js graphs and Google Maps widgets.
 
 3. **Multi-Tool ReAct Agent (`main.py` + `tools.py`)**:
    - Powered by LangGraph's ReAct execution engine with OpenAI `gpt-4o-mini`.
