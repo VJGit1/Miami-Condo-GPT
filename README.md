@@ -109,7 +109,7 @@ Open [http://localhost:5000](http://localhost:5000) in your browser.
 - Add a fourth column with the median sales price for each building
 - Replace the third column with the closest school to the building, and the fourth column with the driving distance to that school from the building
 
-## Architecture: The 3 Core Pillars
+## Architecture
 
 ```mermaid
 flowchart TD
