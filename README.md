@@ -111,6 +111,34 @@ Open [http://localhost:5000](http://localhost:5000) in your browser.
 
 ## Architecture: The 3 Core Pillars
 
+```mermaid
+flowchart TD
+    User([User]) --> UI[Web Interface]
+    UI --> Flask[Flask Backend]
+    
+    Flask --> Agent[LangGraph ReAct Agent]
+    Agent <--> LLM[OpenAI GPT-4o-mini]
+    
+    Agent --> SQLGate[SQL Gateway]
+    SQLGate --> Postgres[(PostgreSQL DB)]
+    
+    Agent --> FAISS[(FAISS Vector Index)]
+    Agent --> GMaps[Google Maps API]
+    
+    Agent --> Sandbox[Security Scanner]
+    Sandbox --> PDF[ReportLab PDF]
+    
+    Postgres --> Agent
+    FAISS --> Agent
+    GMaps --> Agent
+    
+    Agent --> Visuals[Charts & Maps HTML]
+    
+    Visuals --> UI
+    PDF --> UI
+    UI --> User
+```
+
 1. **Robust SQL Gateway (`sql_gateway.py`)**:
    - AST validation via `sqlparse` ensuring only `SELECT` and `WITH ... SELECT` queries execute.
    - Comprehensive blacklist blocking DML (`INSERT`, `UPDATE`, `DELETE`), DDL (`DROP`, `ALTER`, `TRUNCATE`), and unsafe functions (`PG_SLEEP`, `DBLINK`).
