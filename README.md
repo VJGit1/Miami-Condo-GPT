@@ -139,22 +139,6 @@ flowchart TD
     UI --> User
 ```
 
-1. **Robust SQL Gateway (`sql_gateway.py`)**:
-   - AST validation via `sqlparse` ensuring only `SELECT` and `WITH ... SELECT` queries execute.
-   - Comprehensive blacklist blocking DML (`INSERT`, `UPDATE`, `DELETE`), DDL (`DROP`, `ALTER`, `TRUNCATE`), and unsafe functions (`PG_SLEEP`, `DBLINK`).
-   - Enforced `LIMIT` capping to prevent database memory exhaustion.
-   - Query isolation with `SET LOCAL statement_timeout` inside transactional connections.
-
-2. **Sandboxed Code Execution (`main.py`)**:
-   - Dynamic ReportLab code generation for custom, automated PDF reports.
-   - Security scanner (`detect_malicious_code`) detecting and blocking hazardous OS, subprocess, and network calls.
-   - Dynamic HTML extraction and sanitization for Chart.js graphs and Google Maps widgets.
-
-3. **Multi-Tool ReAct Agent (`main.py` + `tools.py`)**:
-   - Powered by LangGraph's ReAct execution engine with OpenAI `gpt-4o-mini`.
-   - Real FAISS vector index (`search_proper_nouns`) for fuzzy entity resolution and address matching.
-   - Live Google Places, Geocoding, and Directions API tools for geospatial intelligence.
-
 ## Project Structure
 
 - `server.py` — Flask web server and session memory
