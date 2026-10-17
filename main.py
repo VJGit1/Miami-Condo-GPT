@@ -1,8 +1,14 @@
 import ast
 import os
 import re
+from urllib.parse import quote_plus
+from uuid import uuid4
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import markdown
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 from googlemaps import Client as GoogleMaps
 from langchain_community.utilities.sql_database import SQLDatabase
@@ -31,14 +37,20 @@ from tools import setup_tools
 # Database credentials
 POSTGRES_USER = os.getenv("PG_USER")
 POSTGRES_PASSWORD = os.getenv("PG_PASSWORD")
+POSTGRES_HOST = os.getenv("PG_HOST", "localhost")
 POSTGRES_PORT = os.getenv("PG_PORT", "5432")
 POSTGRES_DB = os.getenv("PG_DB", "condo_gpt")
 
-connection_string = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@localhost:{POSTGRES_PORT}/{POSTGRES_DB}"
+GENERATED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated")
+
 db = None
 usable_tables = []
 try:
     if POSTGRES_USER and POSTGRES_PASSWORD:
+        connection_string = (
+            f"postgresql://{quote_plus(POSTGRES_USER)}:{quote_plus(POSTGRES_PASSWORD)}"
+            f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+        )
         db = SQLDatabase.from_uri(connection_string)
         usable_tables = db.get_usable_table_names()
 except Exception as exc:
@@ -106,6 +118,89 @@ def detect_malicious_code(code: str) -> bool:
     return False
 
 
+def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+    """Allow generated reports to import ReportLab and nothing else."""
+    if level != 0 or name.split(".", 1)[0] != "reportlab":
+        raise ImportError(f"Import of {name} is not allowed")
+    return __import__(name, globals, locals, fromlist, level)
+
+
+def _pdf_namespace() -> dict:
+    return {
+        "__builtins__": {
+            "__import__": _restricted_import,
+            "abs": abs,
+            "all": all,
+            "any": any,
+            "bool": bool,
+            "dict": dict,
+            "enumerate": enumerate,
+            "float": float,
+            "int": int,
+            "len": len,
+            "list": list,
+            "max": max,
+            "min": min,
+            "print": print,
+            "range": range,
+            "round": round,
+            "sorted": sorted,
+            "str": str,
+            "sum": sum,
+            "tuple": tuple,
+            "zip": zip,
+        },
+        "letter": letter,
+        "canvas": canvas,
+        "colors": colors,
+        "getSampleStyleSheet": getSampleStyleSheet,
+        "Paragraph": Paragraph,
+        "SimpleDocTemplate": SimpleDocTemplate,
+        "Spacer": Spacer,
+        "Table": Table,
+        "TableStyle": TableStyle,
+    }
+
+
+def _rewrite_pdf_target(code: str, pdf_path: str) -> str:
+    """Point the first PDF filename in generated code at a unique file."""
+    literal = pdf_path.replace("\\", "/")
+
+    def _replace(match: re.Match) -> str:
+        quote = match.group("q")
+        return f"{quote}{literal}{quote}"
+
+    rewritten, count = re.subn(
+        r"""(?P<q>['"])(?P<name>[^'"]+\.pdf)(?P=q)""",
+        _replace,
+        code,
+        count=1,
+    )
+    return rewritten if count else code
+
+
+def execute_generated_pdf(code: str) -> Markup:
+    """Run report code in an isolated namespace. Claim success only if the file exists."""
+    if detect_malicious_code(code):
+        return Markup(escape("PDF generation was blocked because the code failed the safety scan."))
+
+    os.makedirs(GENERATED_DIR, exist_ok=True)
+    filename = f"{uuid4().hex}.pdf"
+    pdf_path = os.path.join(GENERATED_DIR, filename)
+    namespace = _pdf_namespace()
+    try:
+        exec(_rewrite_pdf_target(code, pdf_path), namespace)
+    except Exception as exc:
+        print(f"[EXEC ERROR] Error executing generated code: {exc}")
+        return Markup(escape(f"PDF generation failed: {exc}"))
+
+    if os.path.isfile(pdf_path):
+        return Markup(
+            f'PDF generated. <a href="/downloads/{filename}">Download PDF</a>'
+        )
+    return Markup(escape("PDF generation failed: the script did not write a PDF file."))
+
+
 def extract_and_remove_html(text: str) -> tuple[Markup | None, str, str | None]:
     """
     Extract dynamic Python code (for PDF report generation) and HTML blocks (for Chart.js / Maps).
@@ -127,7 +222,11 @@ def extract_and_remove_html(text: str) -> tuple[Markup | None, str, str | None]:
             .replace("&gt;", ">")
             .replace("&#39;", "'")
         )
-        return None, "PDF Generated!", code
+        if python_match:
+            remaining = re.sub(python_pattern, "", text, count=1, flags=re.DOTALL | re.IGNORECASE)
+        else:
+            remaining = re.sub(md_pattern, "", text, count=1, flags=re.DOTALL)
+        return None, remaining.strip(), code
 
     # 2. Check for HTML code blocks (Chart.js / Maps)
     html_pattern = r"```html\s*([\s\S]*?)\s*```"
@@ -147,11 +246,40 @@ def process_markdown(text: str) -> Markup:
     return Markup(html_content)
 
 
+def _history_answer(entry: dict) -> str:
+    answer = entry.get("answer", "")
+    if isinstance(answer, list):
+        answer = " ".join(str(part) for part in answer)
+    return str(answer)
+
+
+def _message_text(msg) -> str:
+    content = getattr(msg, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and isinstance(part.get("text"), str):
+                parts.append(part["text"])
+        return "".join(parts)
+    return ""
+
+
 def process_question(prompted_question: str, conversation_history: list) -> list:
     """Process user query via the LangGraph ReAct agent with dynamic code execution & guardrails."""
+    if agent_executor is None:
+        return [
+            process_markdown(
+                "The assistant is unavailable. Check the database connection and OPENAI_API_KEY, then restart the app."
+            )
+        ]
+
     context = "\n".join(
         [
-            f"Q: {entry['question']}\nA: {entry['answer']}"
+            f"Q: {entry.get('question', '')}\nA: {_history_answer(entry)}"
             for entry in conversation_history
         ]
     )
@@ -166,27 +294,35 @@ Please answer the new question, taking into account the context from the previou
     prompt = consolidated_prompt if conversation_history else prompted_question
 
     content = []
-    for step in agent_executor.stream({"messages": [HumanMessage(content=prompt)]}):
-        for msg in step.get("agent", {}).get("messages", []):
+    for step in agent_executor.stream(
+        {"messages": [HumanMessage(content=prompt)]},
+        stream_mode="updates",
+    ):
+        agent_update = step.get("agent") or {}
+        messages = agent_update.get("messages", [])
+        if not messages:
+            continue
+        if not isinstance(messages, list):
+            messages = [messages]
+        for msg in messages:
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 for call in msg.tool_calls:
-                    if sql := call.get("args", {}).get("query"):
+                    args = call.get("args", {}) if isinstance(call, dict) else {}
+                    if sql := args.get("query"):
                         log_sql_query(sql)
 
-            if msg.content:
-                html_block, stripped_text, code = extract_and_remove_html(msg.content)
-                
-                # Execute generated Python code (e.g. ReportLab) after safety scan
-                if code:
-                    if not detect_malicious_code(code):
-                        try:
-                            exec(code, globals())
-                        except Exception as exc:
-                            print(f"[EXEC ERROR] Error executing generated code: {exc}")
-
+            text = _message_text(msg)
+            if not text.strip():
+                continue
+            html_block, stripped_text, code = extract_and_remove_html(text)
+            if code:
                 if stripped_text:
                     content.append(process_markdown(stripped_text))
-                if html_block:
-                    content.append(html_block)
+                content.append(execute_generated_pdf(code))
+                continue
+            if stripped_text:
+                content.append(process_markdown(stripped_text))
+            if html_block:
+                content.append(html_block)
 
     return content
