@@ -86,6 +86,61 @@ def log_sql_query(sql: str) -> None:
     print(f"\n[SQL GATEWAY EXECUTE]\n{sql}\n")
 
 
+def _iter_messages(update) -> list:
+    if not isinstance(update, dict):
+        return []
+    messages = update.get("messages", [])
+    if not messages:
+        return []
+    if not isinstance(messages, list):
+        return [messages]
+    return messages
+
+
+def _tool_call_name(call) -> str:
+    if isinstance(call, dict):
+        return str(call.get("name") or "")
+    return str(getattr(call, "name", "") or "")
+
+
+def _tool_call_args(call) -> dict:
+    if isinstance(call, dict):
+        args = call.get("args", {})
+    else:
+        args = getattr(call, "args", {})
+    return args if isinstance(args, dict) else {}
+
+
+def _named_content(msg) -> tuple[str, str]:
+    if isinstance(msg, dict):
+        return str(msg.get("name") or ""), str(msg.get("content") or "")
+    return str(getattr(msg, "name", "") or ""), str(getattr(msg, "content", "") or "")
+
+
+_MAP_DIV = re.compile(
+    r"<div\b[^>]*\bid=(['\"])map\1[^>]*>(?:[\s\S]*?</div>)?",
+    re.IGNORECASE,
+)
+_MAP_SCRIPT = re.compile(r"<script\b[^>]*>[\s\S]*?</script>", re.IGNORECASE)
+
+
+def _is_model_map(text: str) -> bool:
+    lowered = text.lower()
+    return 'id="map"' in lowered or "id='map'" in lowered or "initmap" in lowered
+
+
+def _without_model_map(text: str) -> str:
+    def drop_script(match: re.Match) -> str:
+        block = match.group(0)
+        if "initmap" in block.lower() or "google.maps" in block.lower():
+            return ""
+        return block
+
+    cleaned = _MAP_SCRIPT.sub(drop_script, text)
+    cleaned = _MAP_DIV.sub("", cleaned)
+    return cleaned.strip()
+
+
 def process_html(text: str) -> str:
     """Clean duplicate google maps script tags."""
     pattern = r"<script[^>]*\{gmaps_api_key\}[^>]*></script>"
@@ -298,16 +353,13 @@ Please answer the new question, taking into account the context from the previou
         {"messages": [HumanMessage(content=prompt)]},
         stream_mode="updates",
     ):
-        agent_update = step.get("agent") or {}
-        messages = agent_update.get("messages", [])
-        if not messages:
-            continue
-        if not isinstance(messages, list):
-            messages = [messages]
-        for msg in messages:
+        for msg in _iter_messages(step.get("agent") or {}):
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 for call in msg.tool_calls:
-                    args = call.get("args", {}) if isinstance(call, dict) else {}
+                    name = _tool_call_name(call)
+                    if name:
+                        print(f"[TOOL] {name}")
+                    args = _tool_call_args(call)
                     if sql := args.get("query"):
                         log_sql_query(sql)
 
@@ -316,13 +368,20 @@ Please answer the new question, taking into account the context from the previou
                 continue
             html_block, stripped_text, code = extract_and_remove_html(text)
             if code:
-                if stripped_text:
-                    content.append(process_markdown(stripped_text))
+                if stripped_text and not _is_model_map(stripped_text):
+                    content.append(process_markdown(_without_model_map(stripped_text)))
                 content.append(execute_generated_pdf(code))
                 continue
             if stripped_text:
-                content.append(process_markdown(stripped_text))
-            if html_block:
+                visible = _without_model_map(stripped_text)
+                if visible and not _is_model_map(visible):
+                    content.append(process_markdown(visible))
+            if html_block and not _is_model_map(str(html_block)):
                 content.append(html_block)
+
+        for msg in _iter_messages(step.get("tools") or {}):
+            name, tool_html = _named_content(msg)
+            if name == "show_map" and tool_html.strip():
+                content.append(Markup(tool_html.strip()))
 
     return content
