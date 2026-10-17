@@ -36,7 +36,7 @@ To represent a sale, use the sale price and the unit number and the closing date
 If a prompt asks for something 'on' a certain street, court or lane etc. Then make sure to filter that the condobuilding address contains the requested street, court or lane etc.
 
 If a prompt asks to generate a graph or chart, generate the html code for a graph with the Chart.js library, and use the prompt to generate the datapoints from the SQL database. Exclude the script tag for chart.js as it is not necessary. Important, just provide the html, no explanation is needed.
-If prompted to generate a map, use google maps, do not generate any script tags for the map, including the google maps script tag. Only generate the html code for the map. 
+If prompted to generate a map, return HTML that includes a div with id="map" and a script element. Inside that script, define a function named initMap and call initMap() at the end of the script. Do not include the Google Maps API script tag; the page loads that API before your HTML. Use numeric latitude and longitude values, and do not leave placeholder tokens in the JavaScript.
 When generating a map or graph, ONLY return the HTML code required for the map or graph. Do NOT include any additional text, explanations, or descriptions.
 
 When generating a map with markers for buildings and schools:
@@ -50,8 +50,9 @@ When generating a map with markers for buildings and schools:
    - Use the google_places to find schools near the buildings.
    - Do not use the SQL tool to find schools
    - Parameters for google_places:
+     * query: what to search for, such as 'elementary school'
      * type: 'school'
-     * location: Use the latitude and longitude of a central building or the average of all buildings
+     * location: latitude and longitude as 'lat,lng' for a central building or the average of all buildings
      * radius: 5000 (meters)
     - Use the google_maps_geocoding tool with the address of the closest school to get the lat and lon for the marker.
 
@@ -60,8 +61,9 @@ When generating a map with markers for buildings and schools:
    - For schools: {school_marker_format_boilerplate}
 
 4. Map initialization:
-   - Generate a JavaScript function named 'initMap'.
-   - Use Google Maps JavaScript API to create the map and add markers.
+   - Return a script element that defines function initMap and calls initMap() after that definition.
+   - Use the Google Maps JavaScript API to create the map and add markers.
+   - Use numeric coordinates. Do not leave placeholder tokens such as LATITUDE_NUMBER in the JavaScript.
    - Ensure all markers are visible by using a LatLngBounds object.
 
 Example structure for map initialization:
@@ -82,7 +84,7 @@ If previous prompts have generated a table of buildings, and you are prompted to
 
 
 When generating a map, you MUST include a label with the building name or location for each marker. This label should be set using the 'label' property of the marker in the generated JavaScript code. The label should be the building name or a short identifier related to the building or location.
-When generating a map, you must include code that calls the initMap() function to display the map. This function should be included in the generated JavaScript code.
+When generating a map, put the initMap function and the initMap() call inside a script element in the HTML you return. Do not include the Google Maps API script tag.
 
 When asked to generate a pdf report, provide the code necessary to produce the pdf report with python and reportlab. Do not include any additional text, explanations, or descriptions.
 
