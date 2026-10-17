@@ -95,6 +95,36 @@ class TestSQLGateway(unittest.TestCase):
         self.assertFalse(mock_db.executed)
         self.assertIn("Query blocked by SQL gateway", msg)
 
+    def test_replace_function_is_allowed(self):
+        sql = "SELECT REPLACE(address, 'Ave', 'Avenue') FROM core_condobuilding"
+        result = validate_sql(sql)
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("REPLACE", result.sql.upper())
+
+    def test_replace_statement_is_blocked(self):
+        sql = "REPLACE INTO core_condobuilding (address) VALUES ('x')"
+        result = validate_sql(sql)
+        self.assertFalse(result.ok)
+
+    def test_outer_limit_when_only_subquery_has_limit(self):
+        sql = (
+            "SELECT alt_name FROM core_condobuilding "
+            "WHERE id IN (SELECT id FROM core_condounit LIMIT 10)"
+        )
+        result = validate_sql(sql)
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("LIMIT 10", result.sql)
+        self.assertIn("LIMIT 100", result.sql)
+        self.assertGreater(result.sql.upper().rfind("LIMIT 100"), result.sql.upper().find("LIMIT 10"))
+
+    def test_inner_limit_is_not_rewritten(self):
+        sql = "SELECT * FROM (SELECT id FROM core_condounit LIMIT 99999) units"
+        result = validate_sql(sql)
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("LIMIT 99999", result.sql)
+        self.assertIn("LIMIT 100", result.sql)
+        self.assertGreater(result.sql.upper().rfind("LIMIT 100"), result.sql.upper().find("LIMIT 99999"))
+
     def test_safe_run_executes_valid_sql(self):
         class MockDB:
             def __init__(self):
