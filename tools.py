@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
+from html import escape
 from typing import Any, Optional, Type
 
 from googlemaps import Client as GoogleMaps
@@ -30,6 +32,20 @@ class GeocodingInput(BaseModel):
 class DirectionsInput(BaseModel):
     origin: str = Field(..., description="The starting point address or coordinates (lat,lng)")
     destination: str = Field(..., description="The destination point address or coordinates (lat,lng)")
+
+
+class MapMarker(BaseModel):
+    name: str = Field(..., description="Building or place name")
+    address: str = Field(default="", description="Street address")
+    lat: float = Field(..., description="Latitude")
+    lon: float = Field(..., description="Longitude")
+
+
+class ShowMapInput(BaseModel):
+    markers: list[MapMarker] = Field(
+        ...,
+        description="Markers to plot. Each item needs name, address, lat, and lon.",
+    )
 
 
 class PlacesInput(BaseModel):
@@ -143,6 +159,37 @@ class PlacesTool(BaseTool):
             return f"Error searching places: {str(exc)}"
 
 
+class ShowMapTool(BaseTool):
+    name: str = "show_map"
+    description: str = (
+        "Display a map for coordinates you already have. "
+        "Pass markers with name, address, lat, and lon. "
+        "Building coordinates come from core_condobuilding.lat and lon. "
+        "School coordinates come from google_places. This tool does not call Google."
+    )
+    args_schema: Type[BaseModel] = ShowMapInput
+
+    def _run(self, markers: list) -> str:
+        payload = []
+        for marker in markers or []:
+            if isinstance(marker, dict):
+                data = marker
+            elif hasattr(marker, "model_dump"):
+                data = marker.model_dump()
+            else:
+                data = dict(marker)
+            payload.append(
+                {
+                    "name": str(data.get("name", "")),
+                    "address": str(data.get("address") or ""),
+                    "lat": float(data["lat"]),
+                    "lng": float(data.get("lon", data.get("lng"))),
+                }
+            )
+        encoded = escape(json.dumps(payload), quote=True)
+        return f'<div id="map" data-markers="{encoded}"></div>'
+
+
 # --- Helpers & Setup Function ---
 
 def query_as_list(db: Any, query: str) -> list[str]:
@@ -201,6 +248,7 @@ def _proper_noun_tool(db: Any) -> Optional[BaseTool]:
 def setup_tools(db: Any, llm: Any) -> list[BaseTool]:
     """Initialize and assemble agent tools."""
     tools = _sql_tools(db, llm)
+    tools.append(ShowMapTool())
 
     retriever_tool = _proper_noun_tool(db)
     if retriever_tool:
