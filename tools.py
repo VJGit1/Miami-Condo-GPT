@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import ast
 import os
-import re
-from typing import Any, Type
+from typing import Any, Optional, Type
 
 from googlemaps import Client as GoogleMaps
 from langchain.agents.agent_toolkits import create_retriever_tool
 from langchain.tools import BaseTool
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from langchain_community.tools import GooglePlacesTool
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
 from pydantic import BaseModel, ConfigDict, Field
@@ -32,6 +30,16 @@ class GeocodingInput(BaseModel):
 class DirectionsInput(BaseModel):
     origin: str = Field(..., description="The starting point address or coordinates (lat,lng)")
     destination: str = Field(..., description="The destination point address or coordinates (lat,lng)")
+
+
+class PlacesInput(BaseModel):
+    query: str = Field(..., description="What to search for, such as 'elementary school' or a place name")
+    location: Optional[str] = Field(
+        default=None,
+        description="Latitude and longitude of the search center as 'lat,lng'",
+    )
+    radius: int = Field(default=5000, description="Search radius in meters")
+    type: str = Field(default="school", description="Google Places type, such as school")
 
 
 # --- Custom Tool Implementations ---
@@ -90,6 +98,51 @@ class DirectionsTool(BaseTool):
             return f"Error calculating directions: {str(exc)}"
 
 
+class PlacesTool(BaseTool):
+    name: str = "google_places"
+    description: str = (
+        "Search Google Places. Input a query plus optional location ('lat,lng'), "
+        "radius in meters (default 5000), and type (default school)."
+    )
+    args_schema: Type[BaseModel] = PlacesInput
+    gmaps_client: Any = None
+
+    def _run(
+        self,
+        query: str,
+        location: Optional[str] = None,
+        radius: int = 5000,
+        type: str = "school",
+    ) -> str:
+        api_key = os.getenv("GPLACES_API_KEY")
+        if self.gmaps_client is None and not api_key:
+            return "Google Places is unavailable because GPLACES_API_KEY is not set."
+        try:
+            client = self.gmaps_client or GoogleMaps(api_key)
+            kwargs: dict[str, Any] = {"query": query}
+            if location and str(location).strip():
+                lat_str, lng_str = [part.strip() for part in str(location).split(",", 1)]
+                kwargs["location"] = (float(lat_str), float(lng_str))
+                kwargs["radius"] = int(radius)
+            if type:
+                kwargs["type"] = type
+            results = client.places(**kwargs)
+            places = results.get("results", []) if isinstance(results, dict) else []
+            if not places:
+                return f"No places found for {query}."
+            lines = []
+            for place in places[:5]:
+                name = place.get("name", "")
+                address = place.get("formatted_address") or place.get("vicinity") or ""
+                loc = place.get("geometry", {}).get("location", {})
+                lines.append(
+                    f"{name} | {address} | lat: {loc.get('lat')}, lng: {loc.get('lng')}"
+                )
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"Error searching places: {str(exc)}"
+
+
 # --- Helpers & Setup Function ---
 
 def query_as_list(db: Any, query: str) -> list[str]:
@@ -99,23 +152,35 @@ def query_as_list(db: Any, query: str) -> list[str]:
         if not res:
             return []
         res_list = [el for sub in ast.literal_eval(res) for el in sub if el]
-        res_list = [re.sub(r"\b\d+\b", "", str(s)).strip() for s in res_list]
+        res_list = [str(s).strip() for s in res_list]
         return list(set(filter(None, res_list)))
-    except Exception:
+    except Exception as exc:
+        print(f"Note: proper noun query failed: {exc}")
         return []
 
 
-def setup_tools(db: Any, llm: Any) -> list[BaseTool]:
-    """Initialize and assemble agent tools."""
-    gmaps_api_key = os.getenv("GPLACES_API_KEY")
-    gmaps_client = GoogleMaps(gmaps_api_key) if gmaps_api_key else None
+def _sql_tools(db: Any, llm: Any) -> list[BaseTool]:
+    """SQL tools stay available even when Maps or embeddings fail."""
+    safe_sql_tool = SafeSQLQueryTool(db=db)
+    tools: list[BaseTool] = [safe_sql_tool]
+    try:
+        raw_tools = SQLDatabaseToolkit(db=db, llm=llm).get_tools()
+        for tool in raw_tools:
+            if tool.name != "sql_db_query":
+                tools.append(tool)
+    except Exception as exc:
+        print(f"Note: SQL schema tools unavailable: {exc}")
+    return tools
 
-    # 1. FAISS Entity Resolution (Proper Nouns & Addresses)
-    addresses = query_as_list(db, "SELECT address FROM core_condobuilding")
-    alt_names = query_as_list(db, "SELECT alt_name FROM core_condobuilding")
-    entity_texts = list(set(addresses + alt_names))
-    
-    if entity_texts:
+
+def _proper_noun_tool(db: Any) -> Optional[BaseTool]:
+    """Build the FAISS retriever. Failure here must not discard the other tools."""
+    try:
+        addresses = query_as_list(db, "SELECT address FROM core_condobuilding")
+        alt_names = query_as_list(db, "SELECT alt_name FROM core_condobuilding")
+        entity_texts = list(set(addresses + alt_names))
+        if not entity_texts:
+            return None
         vector_db = FAISS.from_texts(entity_texts, OpenAIEmbeddings())
         retriever = vector_db.as_retriever(search_kwargs={"k": 5})
         description = (
@@ -123,31 +188,40 @@ def setup_tools(db: Any, llm: Any) -> list[BaseTool]:
             "Input is an approximate or colloquial spelling of the proper noun; "
             "output is the closest valid database entity."
         )
-        retriever_tool = create_retriever_tool(
+        return create_retriever_tool(
             retriever,
             name="search_proper_nouns",
             description=description,
         )
-    else:
-        retriever_tool = None
+    except Exception as exc:
+        print(f"Note: proper noun index unavailable: {exc}")
+        return None
 
-    # 2. SQL Toolkit with Safe Gateway
-    toolkit = SQLDatabaseToolkit(db=db, llm=llm)
-    raw_tools = toolkit.get_tools()
-    
-    # Replace default sql_db_query with SafeSQLQueryTool
-    safe_sql_tool = SafeSQLQueryTool(db=db)
-    tools = [safe_sql_tool]
-    for t in raw_tools:
-        if t.name != "sql_db_query":
-            tools.append(t)
 
-    # 3. Add Geospatial & Proximity Tools
+def setup_tools(db: Any, llm: Any) -> list[BaseTool]:
+    """Initialize and assemble agent tools."""
+    tools = _sql_tools(db, llm)
+
+    retriever_tool = _proper_noun_tool(db)
     if retriever_tool:
         tools.append(retriever_tool)
-    
-    tools.append(GooglePlacesTool())
-    tools.append(GeocodingTool(gmaps_client=gmaps_client))
-    tools.append(DirectionsTool(gmaps_client=gmaps_client))
+
+    gmaps_client = None
+    gmaps_api_key = os.getenv("GPLACES_API_KEY")
+    if gmaps_api_key:
+        try:
+            gmaps_client = GoogleMaps(gmaps_api_key)
+        except Exception as exc:
+            print(f"Note: Google Maps client unavailable: {exc}")
+
+    try:
+        tools.append(PlacesTool(gmaps_client=gmaps_client))
+    except Exception as exc:
+        print(f"Note: Google Places tool unavailable: {exc}")
+    try:
+        tools.append(GeocodingTool(gmaps_client=gmaps_client))
+        tools.append(DirectionsTool(gmaps_client=gmaps_client))
+    except Exception as exc:
+        print(f"Note: Google Maps tools unavailable: {exc}")
 
     return tools
