@@ -102,27 +102,35 @@ FROM
 """
 
 javascript_map_boilerplate = """
-
+<script>
 function initMap() {
     var locations = [
-        // Building and school markers will be listed here
+        {lat: LATITUDE_NUMBER, lng: LONGITUDE_NUMBER, label: "MARKER_LABEL"}
     ];
 
-    var map = new google.maps.Map(document.getElementById('map'), {
+    var map = new google.maps.Map(document.getElementById("map"), {
         zoom: 13,
-        center: {lat: [average_lat], lng: [average_lng]}
+        center: {lat: LATITUDE_NUMBER, lng: LONGITUDE_NUMBER}
     });
 
+    var bounds = new google.maps.LatLngBounds();
     locations.forEach(function(location) {
         var marker = new google.maps.Marker({
             position: {lat: location.lat, lng: location.lng},
             map: map,
             label: location.label
         });
+        bounds.extend(marker.getPosition());
     });
+    if (locations.length > 0) {
+        map.fitBounds(bounds);
+    }
 }
+initMap();
+</script>
+<div id="map" style="height: 400px; width: 100%;"></div>
 """
 
-building_marker_format_boilerplate = "{lat: [building.lat], lng: [building.lon], label: '[building.alt_name] - [building.address]'}"
+building_marker_format_boilerplate = "{lat: LATITUDE_NUMBER, lng: LONGITUDE_NUMBER, label: 'ALT_NAME - STREET_ADDRESS'}"
 
-school_marker_format_boilerplate = "{lat: [school.geometry.location.lat], lng: [school.geometry.location.lng], label: '[school.name]'}"
+school_marker_format_boilerplate = "{lat: LATITUDE_NUMBER, lng: LONGITUDE_NUMBER, label: 'SCHOOL_NAME'}"
