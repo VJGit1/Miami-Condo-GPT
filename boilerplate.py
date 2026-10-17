@@ -1,10 +1,6 @@
-marker_boilerplate = """"var marker = new google.maps.Marker({
-position: {lat: markerData.lat, lng: markerData.lng},
-map: map,
-title: markerData.name + ' - ' + markerData.address, 
-label: markerData.name
-});
-"""
+marker_boilerplate = (
+    "Pass name, address, lat, and lon to the show_map tool. Do not write JavaScript."
+)
 
 holding_period_boilerplate = """
 
@@ -101,36 +97,14 @@ FROM
 
 """
 
-javascript_map_boilerplate = """
-<script>
-function initMap() {
-    var locations = [
-        {lat: LATITUDE_NUMBER, lng: LONGITUDE_NUMBER, label: "MARKER_LABEL"}
-    ];
+javascript_map_boilerplate = (
+    "Call show_map with the numeric lat and lon values. Do not write JavaScript or return a map div."
+)
 
-    var map = new google.maps.Map(document.getElementById("map"), {
-        zoom: 13,
-        center: {lat: LATITUDE_NUMBER, lng: LONGITUDE_NUMBER}
-    });
+building_marker_format_boilerplate = (
+    "name is alt_name, plus address, lat, and lon from core_condobuilding"
+)
 
-    var bounds = new google.maps.LatLngBounds();
-    locations.forEach(function(location) {
-        var marker = new google.maps.Marker({
-            position: {lat: location.lat, lng: location.lng},
-            map: map,
-            label: location.label
-        });
-        bounds.extend(marker.getPosition());
-    });
-    if (locations.length > 0) {
-        map.fitBounds(bounds);
-    }
-}
-initMap();
-</script>
-<div id="map" style="height: 400px; width: 100%;"></div>
-"""
-
-building_marker_format_boilerplate = "{lat: LATITUDE_NUMBER, lng: LONGITUDE_NUMBER, label: 'ALT_NAME - STREET_ADDRESS'}"
-
-school_marker_format_boilerplate = "{lat: LATITUDE_NUMBER, lng: LONGITUDE_NUMBER, label: 'SCHOOL_NAME'}"
+school_marker_format_boilerplate = (
+    "name, address, lat, and lon returned by google_places"
+)
