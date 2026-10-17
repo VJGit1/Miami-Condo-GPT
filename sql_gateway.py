@@ -29,7 +29,6 @@ FORBIDDEN_KEYWORDS = {
     "EXEC",
     "CALL",
     "MERGE",
-    "REPLACE",
     "ATTACH",
     "DETACH",
     "VACUUM",
@@ -99,17 +98,69 @@ def _is_select_like(statement: Statement) -> bool:
     return first_dml_or_kw in {"SELECT", "WITH"}
 
 
-def _ensure_limit(sql: str, limit: int) -> str:
-    """Append or cap LIMIT on the query."""
-    cleaned = sql.rstrip().rstrip(";")
-    upper = cleaned.upper()
-    if re.search(r"\bLIMIT\s+\d+", upper):
-        def _cap(match: re.Match) -> str:
-            n = int(match.group(1))
-            return f"LIMIT {min(n, limit)}"
+def _is_word_char(ch: str) -> bool:
+    return ch.isalnum() or ch == "_"
 
-        return re.sub(r"\bLIMIT\s+(\d+)", _cap, cleaned, count=1, flags=re.IGNORECASE)
-    return f"{cleaned}\nLIMIT {limit}"
+
+def _find_outer_limit(sql: str) -> Optional[tuple[int, int, int]]:
+    """Return the span and value of a depth-0 LIMIT <int>, ignoring subqueries."""
+    depth = 0
+    in_single = False
+    in_double = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if in_single:
+            if ch == "'" and i + 1 < n and sql[i + 1] == "'":
+                i += 2
+                continue
+            if ch == "'":
+                in_single = False
+            i += 1
+            continue
+        if in_double:
+            if ch == '"':
+                in_double = False
+            i += 1
+            continue
+        if ch == "'":
+            in_single = True
+            i += 1
+            continue
+        if ch == '"':
+            in_double = True
+            i += 1
+            continue
+        if ch == "(":
+            depth += 1
+            i += 1
+            continue
+        if ch == ")":
+            depth = max(0, depth - 1)
+            i += 1
+            continue
+        if (
+            depth == 0
+            and sql[i : i + 5].upper() == "LIMIT"
+            and (i == 0 or not _is_word_char(sql[i - 1]))
+            and (i + 5 >= n or not _is_word_char(sql[i + 5]))
+        ):
+            match = re.match(r"LIMIT\s+(\d+)", sql[i:], flags=re.IGNORECASE)
+            if match:
+                return i, i + match.end(), int(match.group(1))
+        i += 1
+    return None
+
+
+def _ensure_limit(sql: str, limit: int) -> str:
+    """Cap or append LIMIT on the outermost statement. Leave subquery LIMITs unchanged."""
+    cleaned = sql.rstrip().rstrip(";")
+    found = _find_outer_limit(cleaned)
+    if found is None:
+        return f"{cleaned}\nLIMIT {limit}"
+    start, end, current = found
+    return f"{cleaned[:start]}LIMIT {min(current, limit)}{cleaned[end:]}"
 
 
 def validate_sql(sql: str, row_limit: Optional[int] = None) -> ValidationResult:
