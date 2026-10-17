@@ -4,10 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script
-      src="https://maps.googleapis.com/maps/api/js?key={{gmaps_api_key}}&callback=initMap&libraries=maps,marker&v=beta"
-      defer
-    ></script>
 
     <title>CondoGPT</title>
 
@@ -97,6 +93,13 @@
         border-radius: 5px;
         color: #d1d5db;
       }
+      .result-block {
+        margin-bottom: 16px;
+      }
+      #map {
+        height: 400px;
+        width: 100%;
+      }
     </style>
   </head>
   <body>
@@ -118,12 +121,14 @@
         />
         <input type="submit" value="Submit" />
       </form>
+      {% if include_map %}
+      <script src="https://maps.googleapis.com/maps/api/js?key={{ gmaps_api_key }}"></script>
+      {% endif %}
       {% if result %}
       <div class="result">
         <h2>Result:</h2>
         {% for res in result %}
-        <p>{{ res }}</p>
-        <br />
+        <div class="result-block">{{ res }}</div>
         {% endfor %}
       </div>
       {% endif %} {% if conversation_history %}
@@ -139,12 +144,10 @@
         {% endfor %}
       </div>
       {% endif %}
+      <form method="POST">
+        <input type="hidden" name="sign_out" value="true" />
+        <input type="submit" value="Clear Memory" />
+      </form>
     </div>
   </body>
-  <footer>
-    <form method="POST">
-      <input type="hidden" name="sign_out" value="true" />
-      <input type="submit" value="Clear Memory" />
-    </form>
-  </footer>
 </html>
