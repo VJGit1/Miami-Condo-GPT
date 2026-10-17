@@ -121,9 +121,6 @@
         />
         <input type="submit" value="Submit" />
       </form>
-      {% if include_map %}
-      <script src="https://maps.googleapis.com/maps/api/js?key={{ gmaps_api_key }}"></script>
-      {% endif %}
       {% if result %}
       <div class="result">
         <h2>Result:</h2>
@@ -131,7 +128,46 @@
         <div class="result-block">{{ res }}</div>
         {% endfor %}
       </div>
-      {% endif %} {% if conversation_history %}
+      {% endif %}
+      {% if include_map %}
+      <script src="https://maps.googleapis.com/maps/api/js?key={{ gmaps_api_key }}"></script>
+      <script>
+        function initMap() {
+          var el = document.getElementById("map");
+          if (!el || !window.google || !google.maps) return;
+          var markers = [];
+          try {
+            markers = JSON.parse(el.getAttribute("data-markers") || "[]");
+          } catch (error) {
+            return;
+          }
+          var first = markers[0] || { lat: 25.79, lng: -80.13 };
+          var map = new google.maps.Map(el, {
+            zoom: 13,
+            center: { lat: Number(first.lat), lng: Number(first.lng) },
+          });
+          var bounds = new google.maps.LatLngBounds();
+          markers.forEach(function (marker) {
+            var position = { lat: Number(marker.lat), lng: Number(marker.lng) };
+            var title = [marker.name, marker.address].filter(Boolean).join(" - ");
+            new google.maps.Marker({
+              position: position,
+              map: map,
+              title: title,
+            });
+            bounds.extend(position);
+          });
+          if (markers.length > 1) {
+            map.fitBounds(bounds);
+          } else if (markers.length === 1) {
+            map.setCenter(bounds.getCenter());
+            map.setZoom(15);
+          }
+        }
+        initMap();
+      </script>
+      {% endif %}
+      {% if conversation_history %}
       <div class="conversation-history">
         <h2>Conversation History:</h2>
         {% for entry in conversation_history %}
