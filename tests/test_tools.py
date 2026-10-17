@@ -11,6 +11,7 @@ from tools import (
     DirectionsInput,
     PlacesTool,
     PlacesInput,
+    ShowMapTool,
     SafeSQLQueryTool,
     SQLQueryInput,
     query_as_list,
@@ -65,6 +66,24 @@ class TestTools(unittest.TestCase):
         with patch.dict(os.environ, {"GPLACES_API_KEY": ""}):
             result = PlacesTool()._run("elementary school")
         self.assertIn("GPLACES_API_KEY", result)
+
+    def test_show_map_returns_marker_div(self):
+        html = ShowMapTool()._run(
+            markers=[
+                {
+                    "name": "Continuum",
+                    "address": "100 South Pointe Dr",
+                    "lat": 25.76,
+                    "lon": -80.13,
+                }
+            ]
+        )
+        self.assertIn('id="map"', html)
+        self.assertIn("data-markers=", html)
+        self.assertIn("25.76", html)
+        self.assertNotIn("<script", html.lower())
+        self.assertNotIn("LATITUDE_NUMBER", html)
+        self.assertNotIn("initMap", html)
 
     def test_query_as_list_keeps_street_numbers(self):
         class MockDB:
