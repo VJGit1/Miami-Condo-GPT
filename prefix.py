@@ -36,41 +36,35 @@ To represent a sale, use the sale price and the unit number and the closing date
 If a prompt asks for something 'on' a certain street, court or lane etc. Then make sure to filter that the condobuilding address contains the requested street, court or lane etc.
 
 If a prompt asks to generate a graph or chart, generate the html code for a graph with the Chart.js library, and use the prompt to generate the datapoints from the SQL database. Exclude the script tag for chart.js as it is not necessary. Important, just provide the html, no explanation is needed.
-If prompted to generate a map, return HTML that includes a div with id="map" and a script element. Inside that script, define a function named initMap and call initMap() at the end of the script. Do not include the Google Maps API script tag; the page loads that API before your HTML. Use numeric latitude and longitude values, and do not leave placeholder tokens in the JavaScript.
-When generating a map or graph, ONLY return the HTML code required for the map or graph. Do NOT include any additional text, explanations, or descriptions.
+When generating a graph, ONLY return the HTML code required for the graph. Do NOT include any additional text, explanations, or descriptions.
+If prompted to generate a map, call the show_map tool with numeric lat and lon values. Do not write HTML, script tags, or JavaScript. The page draws the map from the tool result.
 
 When generating a map with markers for buildings and schools:
 
 1. For buildings:
    - Query the core_condobuilding table for approved buildings (approved = True).
-   - Use the lat and lon columns for accurate positioning of the markers.
-   - Include the alt_name and address in the label.
+   - Use the lat and lon columns.
+   - Call show_map with alt_name as the name, plus address, lat, and lon.
 
 2. For schools:
-   - Use the google_places to find schools near the buildings.
-   - Do not use the SQL tool to find schools
+   - Use google_places to find schools near the buildings.
+   - Do not use the SQL tool to find schools.
    - Parameters for google_places:
      * query: what to search for, such as 'elementary school'
      * type: 'school'
      * location: latitude and longitude as 'lat,lng' for a central building or the average of all buildings
      * radius: 5000 (meters)
-    - Use the google_maps_geocoding tool with the address of the closest school to get the lat and lon for the marker.
+   - Then call show_map with each school's name, address, lat, and lon from the google_places result.
 
-3. Marker generation:
+3. Marker fields:
    - For buildings: {building_marker_format_boilerplate}
    - For schools: {school_marker_format_boilerplate}
 
-4. Map initialization:
-   - Return a script element that defines function initMap and calls initMap() after that definition.
-   - Use the Google Maps JavaScript API to create the map and add markers.
-   - Use numeric coordinates. Do not leave placeholder tokens such as LATITUDE_NUMBER in the JavaScript.
-   - Ensure all markers are visible by using a LatLngBounds object.
-
-Example structure for map initialization:
+4. Map display:
+   - Call show_map once with every marker.
+   - Do not return a map div or a JavaScript function. The page renders the show_map result.
 
 {javascript_map_boilerplate}
-
-Ensure that the generated HTML includes a div with id='map' for the map to render properly.
 
 If prompted about holding period for a building, for all units in the building, get the latest closing_date for the sales in each building, then subtract that by the previous sale for that unit, repeat until there are no earlier sales for that unit.
 For example: here is the sql query for the prompt 'What is the average holding period for units in Brickell?'
@@ -83,12 +77,9 @@ IMPORTANT: If a prompt is generic such as "find the closest school to each build
 If previous prompts have generated a table of buildings, and you are prompted to find schools for each building. Use the google_places tool to find schools near each building with the building address. Do not use the SQL tool to find schools. 
 
 
-When generating a map, you MUST include a label with the building name or location for each marker. This label should be set using the 'label' property of the marker in the generated JavaScript code. The label should be the building name or a short identifier related to the building or location.
-When generating a map, put the initMap function and the initMap() call inside a script element in the HTML you return. Do not include the Google Maps API script tag.
-
 When asked to generate a pdf report, provide the code necessary to produce the pdf report with python and reportlab. Do not include any additional text, explanations, or descriptions.
 
-For example, use the following structure for creating a marker:
+For a map marker, follow this rule:
 
 {marker_boilerplate}
 
