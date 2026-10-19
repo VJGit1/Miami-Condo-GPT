@@ -100,6 +100,10 @@
         height: 400px;
         width: 100%;
       }
+      #salesChart {
+        width: 100%;
+        max-height: 360px;
+      }
       .voice-controls {
         display: flex;
         gap: 10px;
@@ -157,6 +161,29 @@
         {% endfor %}
       </div>
       {% endif %}
+      <script>
+        (function () {
+          var canvas = document.getElementById("salesChart");
+          if (!canvas || !window.Chart) return;
+          var labels = [];
+          var values = [];
+          try {
+            labels = JSON.parse(canvas.getAttribute("data-labels") || "[]");
+            values = JSON.parse(canvas.getAttribute("data-values") || "[]");
+          } catch (error) {
+            return;
+          }
+          if (!labels.length) return;
+          new Chart(canvas.getContext("2d"), {
+            type: "bar",
+            data: {
+              labels: labels,
+              datasets: [{ label: "Value", data: values }],
+            },
+            options: { scales: { y: { beginAtZero: true } } },
+          });
+        })();
+      </script>
       {% if include_map %}
       <script src="https://maps.googleapis.com/maps/api/js?key={{ gmaps_api_key }}"></script>
       <script>
