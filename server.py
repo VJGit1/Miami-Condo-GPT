@@ -7,10 +7,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import sqlparse
-from flask import Flask, abort, render_template, request, send_from_directory, session
+from flask import Flask, abort, jsonify, render_template, request, send_from_directory, session
 from flask_cors import CORS
 
 from main import GENERATED_DIR, process_question
+from voice_groq import VoiceConfigError, load_speech_models, synthesize_speech, transcribe_audio
 
 app = Flask(__name__)
 
@@ -81,6 +82,34 @@ def download_pdf(filename):
     return send_from_directory(directory, safe_name, as_attachment=True)
 
 
+@app.route("/voice/transcribe", methods=["POST"])
+def voice_transcribe():
+    audio = request.files.get("audio")
+    if audio is None:
+        return jsonify(error="Record a short question and try again."), 400
+    payload = audio.read()
+    if not payload:
+        return jsonify(error="Record a short question and try again."), 400
+    try:
+        text = transcribe_audio(payload, audio.filename or "audio.wav", audio.mimetype or "audio/wav")
+    except VoiceConfigError as exc:
+        return jsonify(error=str(exc)), 503
+    return jsonify(text=text)
+
+
+@app.route("/voice/speak", methods=["POST"])
+def voice_speak():
+    payload = request.get_json(silent=True) or {}
+    text = payload.get("text") if isinstance(payload, dict) else ""
+    if not str(text or "").strip():
+        return jsonify(error="Nothing to speak."), 400
+    try:
+        audio = synthesize_speech(str(text))
+    except VoiceConfigError as exc:
+        return jsonify(error=str(exc)), 503
+    return audio, 200, {"Content-Type": "audio/wav"}
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
@@ -114,4 +143,8 @@ def index():
 
 
 if __name__ == "__main__":
+    try:
+        load_speech_models()
+    except VoiceConfigError as exc:
+        print(exc)
     app.run(debug=True)
