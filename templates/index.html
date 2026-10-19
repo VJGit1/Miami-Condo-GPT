@@ -100,6 +100,28 @@
         height: 400px;
         width: 100%;
       }
+      .voice-controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .voice-controls button {
+        padding: 15px 20px;
+        background-color: #10a37f;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      .voice-controls button:disabled {
+        background-color: #555;
+        cursor: default;
+      }
+      #voice-status {
+        color: #fff;
+      }
     </style>
   </head>
   <body>
@@ -112,8 +134,9 @@
         height="200"
       />
       <h1>CondoGPT</h1>
-      <form method="POST">
+      <form id="question-form" method="POST">
         <input
+          id="question-input"
           type="text"
           name="question"
           placeholder="Enter your question here"
@@ -121,6 +144,11 @@
         />
         <input type="submit" value="Submit" />
       </form>
+      <div class="voice-controls">
+        <button type="button" id="voice-talk">Talk</button>
+        <button type="button" id="voice-stop" disabled>Stop</button>
+        <span id="voice-status" aria-live="polite"></span>
+      </div>
       {% if result %}
       <div class="result">
         <h2>Result:</h2>
@@ -185,5 +213,204 @@
         <input type="submit" value="Clear Memory" />
       </form>
     </div>
+    <script>
+      (function () {
+        var VOICE_KEY = "condo_voice";
+        var talkButton = document.getElementById("voice-talk");
+        var stopButton = document.getElementById("voice-stop");
+        var statusNode = document.getElementById("voice-status");
+        var questionForm = document.getElementById("question-form");
+        var questionInput = document.getElementById("question-input");
+        var recorder = null;
+        var chunks = [];
+        var stream = null;
+        var playing = null;
+        var recording = false;
+
+        function setStatus(text) {
+          statusNode.textContent = text || "";
+        }
+
+        function voiceEnabled() {
+          return sessionStorage.getItem(VOICE_KEY) === "1";
+        }
+
+        function resultSpeechText() {
+          var result = document.querySelector(".result");
+          if (!result) return "";
+          var clone = result.cloneNode(true);
+          clone.querySelectorAll("script, style, #map").forEach(function (node) {
+            node.remove();
+          });
+          return (clone.innerText || "").replace(/\s+/g, " ").trim();
+        }
+
+        function encodeWav(audioBuffer) {
+          var samples = audioBuffer.getChannelData(0);
+          var buffer = new ArrayBuffer(44 + samples.length * 2);
+          var view = new DataView(buffer);
+          function writeString(offset, value) {
+            for (var i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i));
+          }
+          writeString(0, "RIFF");
+          view.setUint32(4, 36 + samples.length * 2, true);
+          writeString(8, "WAVE");
+          writeString(12, "fmt ");
+          view.setUint32(16, 16, true);
+          view.setUint16(20, 1, true);
+          view.setUint16(22, 1, true);
+          view.setUint32(24, audioBuffer.sampleRate, true);
+          view.setUint32(28, audioBuffer.sampleRate * 2, true);
+          view.setUint16(32, 2, true);
+          view.setUint16(34, 16, true);
+          writeString(36, "data");
+          view.setUint32(40, samples.length * 2, true);
+          var offset = 44;
+          for (var index = 0; index < samples.length; index++, offset += 2) {
+            var sample = Math.max(-1, Math.min(1, samples[index]));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+          }
+          return new Blob([buffer], { type: "audio/wav" });
+        }
+
+        function blobToWav(blob) {
+          return blob.arrayBuffer().then(function (bytes) {
+            var context = new AudioContext();
+            return context.decodeAudioData(bytes).then(function (audioBuffer) {
+              context.close();
+              return encodeWav(audioBuffer);
+            });
+          });
+        }
+
+        function startRecording() {
+          if (!navigator.mediaDevices || !window.MediaRecorder) {
+            setStatus("Voice input needs a browser that can record audio.");
+            return;
+          }
+          setStatus("Listening");
+          navigator.mediaDevices.getUserMedia({ audio: true }).then(function (userStream) {
+            if (!voiceEnabled()) {
+              userStream.getTracks().forEach(function (track) { track.stop(); });
+              return;
+            }
+            stream = userStream;
+            chunks = [];
+            var mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+            recorder = mimeType ? new MediaRecorder(userStream, { mimeType: mimeType }) : new MediaRecorder(userStream);
+            recorder.ondataavailable = function (event) {
+              if (event.data && event.data.size) chunks.push(event.data);
+            };
+            recorder.onstop = submitRecording;
+            recorder.start();
+            recording = true;
+            talkButton.textContent = "Send";
+            stopButton.disabled = false;
+          }).catch(function () {
+            sessionStorage.removeItem(VOICE_KEY);
+            setStatus("Microphone permission was denied.");
+            talkButton.textContent = "Talk";
+            stopButton.disabled = true;
+          });
+        }
+
+        function submitRecording() {
+          recording = false;
+          talkButton.textContent = "Talk";
+          if (stream) stream.getTracks().forEach(function (track) { track.stop(); });
+          if (!voiceEnabled()) return;
+          var blob = new Blob(chunks, { type: recorder && recorder.mimeType ? recorder.mimeType : "audio/webm" });
+          setStatus("Looking that up");
+          blobToWav(blob).then(function (wav) {
+            var body = new FormData();
+            body.append("audio", wav, "question.wav");
+            return fetch("/voice/transcribe", { method: "POST", body: body });
+          }).then(function (response) {
+            return response.json().then(function (payload) {
+              if (!response.ok) throw new Error(payload.error || "Transcription failed.");
+              return payload.text || "";
+            });
+          }).then(function (text) {
+            if (!voiceEnabled()) return;
+            if (!text.trim()) {
+              setStatus("I didn't catch that.");
+              startRecording();
+              return;
+            }
+            questionInput.value = text.trim();
+            setStatus("Looking that up");
+            questionForm.submit();
+          }).catch(function (error) {
+            setStatus(error.message || "Transcription failed.");
+          });
+        }
+
+        function playAnswer() {
+          var text = resultSpeechText();
+          if (!text || !voiceEnabled()) {
+            if (voiceEnabled()) startRecording();
+            return;
+          }
+          setStatus("Looking that up");
+          fetch("/voice/speak", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text }),
+          }).then(function (response) {
+            if (!response.ok) {
+              return response.json().then(function (payload) {
+                throw new Error(payload.error || "Speech failed.");
+              });
+            }
+            return response.blob();
+          }).then(function (audioBlob) {
+            if (!voiceEnabled()) return;
+            playing = new Audio(URL.createObjectURL(audioBlob));
+            playing.onended = function () {
+              if (voiceEnabled()) startRecording();
+            };
+            return playing.play();
+          }).catch(function (error) {
+            setStatus(error.message || "Speech failed.");
+            if (voiceEnabled()) startRecording();
+          });
+        }
+
+        talkButton.addEventListener("click", function () {
+          sessionStorage.setItem(VOICE_KEY, "1");
+          stopButton.disabled = false;
+          if (recording && recorder && recorder.state === "recording") {
+            recorder.stop();
+            return;
+          }
+          startRecording();
+        });
+
+        stopButton.addEventListener("click", function () {
+          sessionStorage.removeItem(VOICE_KEY);
+          if (recorder && recorder.state === "recording") recorder.stop();
+          if (stream) stream.getTracks().forEach(function (track) { track.stop(); });
+          if (playing) {
+            playing.pause();
+            playing = null;
+          }
+          recording = false;
+          talkButton.textContent = "Talk";
+          stopButton.disabled = true;
+          setStatus("");
+        });
+
+        var clearForm = document.querySelector("form input[name='sign_out']");
+        if (clearForm && clearForm.form) {
+          clearForm.form.addEventListener("submit", function () {
+            sessionStorage.removeItem(VOICE_KEY);
+          });
+        }
+
+        if (voiceEnabled() && document.querySelector(".result")) {
+          playAnswer();
+        }
+      })();
+    </script>
   </body>
 </html>
