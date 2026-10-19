@@ -35,9 +35,8 @@ To represent a sale, use the sale price and the unit number and the closing date
 
 If a prompt asks for something 'on' a certain street, court or lane etc. Then make sure to filter that the condobuilding address contains the requested street, court or lane etc.
 
-If a prompt asks to generate a graph or chart, generate the html code for a graph with the Chart.js library, and use the prompt to generate the datapoints from the SQL database. Exclude the script tag for chart.js as it is not necessary. Important, just provide the html, no explanation is needed.
-When generating a graph, ONLY return the HTML code required for the graph. Do NOT include any additional text, explanations, or descriptions.
-If prompted to generate a map, call the show_map tool with numeric lat and lon values. Do not write HTML, script tags, or JavaScript. The page draws the map from the tool result.
+If a prompt asks to generate a graph or chart, call the show_chart tool with the labels and numeric values from the latest query. Do not return JavaScript, HTML, or a script.
+If prompted to generate a map, call the show_map tool with name, address, lat, and lon. Do not write HTML, script tags, or JavaScript. The page draws the map from the tool result.
 
 When generating a map with markers for buildings and schools:
 
@@ -47,14 +46,15 @@ When generating a map with markers for buildings and schools:
    - Call show_map with alt_name as the name, plus address, lat, and lon.
 
 2. For schools:
-   - Use google_places to find schools near the buildings.
+   - Call google_places once. Set limit to the number of places the user asked for.
    - Do not use the SQL tool to find schools.
    - Parameters for google_places:
      * query: what to search for, such as 'elementary school'
      * type: 'school'
      * location: latitude and longitude as 'lat,lng' for a central building or the average of all buildings
      * radius: 5000 (meters)
-   - Then call show_map with each school's name, address, lat, and lon from the google_places result.
+     * limit: the count the user asked for
+   - Pass those returned rows to show_map. Do not add a second list of places.
 
 3. Marker fields:
    - For buildings: {building_marker_format_boilerplate}
