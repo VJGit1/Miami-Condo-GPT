@@ -124,6 +124,25 @@ _MAP_DIV = re.compile(
 _MAP_SCRIPT = re.compile(r"<script\b[^>]*>[\s\S]*?</script>", re.IGNORECASE)
 
 
+def _is_model_chart(text: str) -> bool:
+    lowered = text.lower()
+    return "new chart(" in lowered or "getcontext(" in lowered or "data-labels=" in lowered
+
+
+def _without_model_chart(text: str) -> str:
+    def drop_script(match: re.Match) -> str:
+        block = match.group(0)
+        if "new chart(" in block.lower() or "chart(" in block.lower():
+            return ""
+        return block
+
+    cleaned = re.sub(r"<script\b[^>]*>[\s\S]*?</script>", drop_script, text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<canvas\b[^>]*>[\s\S]*?</canvas>", "", cleaned, flags=re.IGNORECASE)
+    if _is_model_chart(cleaned):
+        return ""
+    return cleaned.strip()
+
+
 def _is_model_map(text: str) -> bool:
     lowered = text.lower()
     return 'id="map"' in lowered or "id='map'" in lowered or "initmap" in lowered
@@ -373,15 +392,15 @@ Please answer the new question, taking into account the context from the previou
                 content.append(execute_generated_pdf(code))
                 continue
             if stripped_text:
-                visible = _without_model_map(stripped_text)
-                if visible and not _is_model_map(visible):
+                visible = _without_model_chart(_without_model_map(stripped_text))
+                if visible and not _is_model_map(visible) and not _is_model_chart(visible):
                     content.append(process_markdown(visible))
-            if html_block and not _is_model_map(str(html_block)):
+            if html_block and not _is_model_map(str(html_block)) and not _is_model_chart(str(html_block)):
                 content.append(html_block)
 
         for msg in _iter_messages(step.get("tools") or {}):
             name, tool_html = _named_content(msg)
-            if name == "show_map" and tool_html.strip():
+            if name in {"show_map", "show_chart"} and tool_html.strip():
                 content.append(Markup(tool_html.strip()))
 
     return content
