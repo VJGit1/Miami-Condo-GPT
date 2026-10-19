@@ -56,6 +56,15 @@ class PlacesInput(BaseModel):
     )
     radius: int = Field(default=5000, description="Search radius in meters")
     type: str = Field(default="school", description="Google Places type, such as school")
+    limit: int = Field(
+        default=3,
+        description="How many places to return. Use the count the user asked for. Maximum 5.",
+    )
+
+
+class ShowChartInput(BaseModel):
+    labels: list[str] = Field(..., description="Category labels from the latest query")
+    values: list[float] = Field(..., description="Numeric values, one per label")
 
 
 # --- Custom Tool Implementations ---
@@ -118,7 +127,8 @@ class PlacesTool(BaseTool):
     name: str = "google_places"
     description: str = (
         "Search Google Places. Input a query plus optional location ('lat,lng'), "
-        "radius in meters (default 5000), and type (default school)."
+        "radius in meters (default 5000), type (default school), and limit "
+        "(the count the user asked for, maximum 5)."
     )
     args_schema: Type[BaseModel] = PlacesInput
     gmaps_client: Any = None
@@ -129,6 +139,7 @@ class PlacesTool(BaseTool):
         location: Optional[str] = None,
         radius: int = 5000,
         type: str = "school",
+        limit: int = 3,
     ) -> str:
         api_key = os.getenv("GPLACES_API_KEY")
         if self.gmaps_client is None and not api_key:
@@ -147,27 +158,49 @@ class PlacesTool(BaseTool):
             if not places:
                 return f"No places found for {query}."
             lines = []
-            for place in places[:5]:
+            for place in places[:_place_limit(limit)]:
                 name = place.get("name", "")
                 address = place.get("formatted_address") or place.get("vicinity") or ""
                 loc = place.get("geometry", {}).get("location", {})
                 lines.append(
-                    f"{name} | {address} | lat: {loc.get('lat')}, lng: {loc.get('lng')}"
+                    f"{name} | {address} | lat: {loc.get('lat')}, lon: {loc.get('lng')}"
                 )
             return "\n".join(lines)
         except Exception as exc:
             return f"Error searching places: {str(exc)}"
 
 
+def _place_limit(limit: Any) -> int:
+    """Use the requested count, and never return more than 5."""
+    try:
+        count = int(limit)
+    except (TypeError, ValueError):
+        count = 3
+    return min(max(count, 1), 5)
+
+
 class ShowMapTool(BaseTool):
     name: str = "show_map"
     description: str = (
-        "Display a map for coordinates you already have. "
-        "Pass markers with name, address, lat, and lon. "
-        "Building coordinates come from core_condobuilding.lat and lon. "
-        "School coordinates come from google_places. This tool does not call Google."
+        "Display a map. Pass markers with name, address, lat, and lon. "
+        "When an address is present, this tool geocodes it and plots that point."
     )
     args_schema: Type[BaseModel] = ShowMapInput
+    gmaps_client: Any = None
+
+    def _geocode(self, address: str) -> Optional[tuple[float, float]]:
+        api_key = os.getenv("GPLACES_API_KEY")
+        if self.gmaps_client is None and not api_key:
+            return None
+        try:
+            client = self.gmaps_client or GoogleMaps(api_key)
+            result = client.geocode(address)
+            if not result:
+                return None
+            location = result[0]["geometry"]["location"]
+            return float(location["lat"]), float(location["lng"])
+        except Exception:
+            return None
 
     def _run(self, markers: list) -> str:
         payload = []
@@ -178,16 +211,41 @@ class ShowMapTool(BaseTool):
                 data = marker.model_dump()
             else:
                 data = dict(marker)
+            address = str(data.get("address") or "").strip()
+            lat = float(data["lat"])
+            lng = float(data.get("lon", data.get("lng")))
+            if address:
+                geocoded = self._geocode(address)
+                if geocoded is not None:
+                    lat, lng = geocoded
             payload.append(
                 {
                     "name": str(data.get("name", "")),
-                    "address": str(data.get("address") or ""),
-                    "lat": float(data["lat"]),
-                    "lng": float(data.get("lon", data.get("lng"))),
+                    "address": address,
+                    "lat": lat,
+                    "lng": lng,
                 }
             )
         encoded = escape(json.dumps(payload), quote=True)
         return f'<div id="map" data-markers="{encoded}"></div>'
+
+
+class ShowChartTool(BaseTool):
+    name: str = "show_chart"
+    description: str = (
+        "Display a bar chart from the latest query. "
+        "Pass labels and numeric values. Do not write JavaScript."
+    )
+    args_schema: Type[BaseModel] = ShowChartInput
+
+    def _run(self, labels: list, values: list) -> str:
+        pairs = list(zip(labels or [], values or []))
+        label_payload = escape(json.dumps([str(label) for label, _ in pairs]), quote=True)
+        value_payload = escape(json.dumps([float(value) for _, value in pairs]), quote=True)
+        return (
+            f'<canvas id="salesChart" data-labels="{label_payload}" '
+            f'data-values="{value_payload}"></canvas>'
+        )
 
 
 # --- Helpers & Setup Function ---
@@ -248,7 +306,7 @@ def _proper_noun_tool(db: Any) -> Optional[BaseTool]:
 def setup_tools(db: Any, llm: Any) -> list[BaseTool]:
     """Initialize and assemble agent tools."""
     tools = _sql_tools(db, llm)
-    tools.append(ShowMapTool())
+    tools.append(ShowChartTool())
 
     retriever_tool = _proper_noun_tool(db)
     if retriever_tool:
@@ -263,6 +321,7 @@ def setup_tools(db: Any, llm: Any) -> list[BaseTool]:
             print(f"Note: Google Maps client unavailable: {exc}")
 
     try:
+        tools.append(ShowMapTool(gmaps_client=gmaps_client))
         tools.append(PlacesTool(gmaps_client=gmaps_client))
     except Exception as exc:
         print(f"Note: Google Places tool unavailable: {exc}")
