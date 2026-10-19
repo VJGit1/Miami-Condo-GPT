@@ -12,6 +12,7 @@ from tools import (
     PlacesTool,
     PlacesInput,
     ShowMapTool,
+    ShowChartTool,
     SafeSQLQueryTool,
     SQLQueryInput,
     query_as_list,
@@ -68,11 +69,15 @@ class TestTools(unittest.TestCase):
         self.assertIn("GPLACES_API_KEY", result)
 
     def test_show_map_returns_marker_div(self):
-        html = ShowMapTool()._run(
+        class FailingGeocoder:
+            def geocode(self, address):
+                raise RuntimeError("offline")
+
+        html = ShowMapTool(gmaps_client=FailingGeocoder())._run(
             markers=[
                 {
-                    "name": "Continuum",
-                    "address": "100 South Pointe Dr",
+                    "name": "Sample Building",
+                    "address": "1 Example Street",
                     "lat": 25.76,
                     "lon": -80.13,
                 }
@@ -84,6 +89,46 @@ class TestTools(unittest.TestCase):
         self.assertNotIn("<script", html.lower())
         self.assertNotIn("LATITUDE_NUMBER", html)
         self.assertNotIn("initMap", html)
+
+    def test_show_map_uses_geocoded_address(self):
+        class FakeGeocoder:
+            def geocode(self, address):
+                return [{"geometry": {"location": {"lat": 1.25, "lng": 2.5}}}]
+
+        html = ShowMapTool(gmaps_client=FakeGeocoder())._run(
+            markers=[{"name": "Sample", "address": "1 Example Street", "lat": 9.0, "lon": 8.0}]
+        )
+        self.assertIn("1.25", html)
+        self.assertIn("2.5", html)
+        self.assertNotIn("9.0", html)
+
+    def test_places_limit_is_capped_at_five(self):
+        class FakePlaces:
+            def places(self, **kwargs):
+                return {
+                    "results": [
+                        {
+                            "name": f"Place {index}",
+                            "formatted_address": f"{index} Example Street",
+                            "geometry": {"location": {"lat": float(index), "lng": float(-index)}},
+                        }
+                        for index in range(1, 8)
+                    ]
+                }
+
+        tool = PlacesTool(gmaps_client=FakePlaces())
+        limited = [line for line in tool._run(query="school", limit=3).splitlines() if line.strip()]
+        self.assertEqual(len(limited), 3)
+        self.assertIn("lon:", limited[0])
+        capped = [line for line in tool._run(query="school", limit=99).splitlines() if line.strip()]
+        self.assertEqual(len(capped), 5)
+
+    def test_show_chart_returns_canvas_without_script(self):
+        html = ShowChartTool()._run(labels=["A", "B"], values=[1, 2])
+        self.assertIn("<canvas", html)
+        self.assertIn("data-labels=", html)
+        self.assertIn("data-values=", html)
+        self.assertNotIn("<script", html.lower())
 
     def test_query_as_list_keeps_street_numbers(self):
         class MockDB:
