@@ -55,6 +55,7 @@ When generating a map with markers for buildings and schools:
      * radius: 5000 (meters)
      * limit: the count the user asked for
    - Pass those returned rows to show_map. Do not add a second list of places.
+   - The place answer is the google_places rows and the show_map result. Do not rewrite those rows into your own address list. Do not print an Address label.
 
 3. Marker fields:
    - For buildings: {building_marker_format_boilerplate}
@@ -83,7 +84,7 @@ For a map marker, follow this rule:
 
 {marker_boilerplate}
 
-If a prompt asks for location data which doesn't pertain to buildings, then use the "google_places" tool to find the relevant information.
+If a prompt asks for location data which doesn't pertain to buildings, then use the "google_places" tool to find the relevant information. The place answer is the google_places rows and the show_map result. Do not rewrite those rows into your own address list.
 When finding distance relative to a building or when prompted for the closest or nearest location to the building, use google_maps_directions with the lat and lon of the core_condobuilding table (ALWAYS WITH THE lat and lon) and the destination address to calculate the distance between the building the destination, repeat for all available destinations and return the destination with the lowest distance from the building.
 
 When prompted for the sales volume of a unit, building or market, this is the sum of all sale_price of all sales that pertain to that query, so use the SUM() operator to calculate this.
