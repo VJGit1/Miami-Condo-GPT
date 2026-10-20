@@ -123,6 +123,22 @@ class TestTools(unittest.TestCase):
         capped = [line for line in tool._run(query="school", limit=99).splitlines() if line.strip()]
         self.assertEqual(len(capped), 5)
 
+    def test_render_places_is_one_line_each_without_address_label(self):
+        from main import render_places
+
+        tool_text = "\n".join(
+            [
+                "Place One | 10 Example Street | lat: 1.0, lon: 2.0",
+                "Place Two | 20 Example Street | lat: 3.0, lon: 4.0",
+            ]
+        )
+        html = str(render_places(tool_text))
+        lines = [line.strip() for line in html.split("<br>") if line.strip()]
+        self.assertEqual(lines, ["Place One, 10 Example Street", "Place Two, 20 Example Street"])
+        self.assertNotIn("Address:", html)
+        self.assertNotIn("lat:", html)
+        self.assertNotIn("lon:", html)
+
     def test_show_chart_returns_canvas_without_script(self):
         html = ShowChartTool()._run(labels=["A", "B"], values=[1, 2])
         self.assertIn("<canvas", html)
