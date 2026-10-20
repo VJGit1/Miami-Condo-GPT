@@ -320,6 +320,78 @@ def process_markdown(text: str) -> Markup:
     return Markup(html_content)
 
 
+_PLACE_ROW = re.compile(
+    r"^(?P<name>[^|]+)\|\s*(?P<address>[^|]*)\|\s*lat:\s*[^,]+,\s*lon:\s*\S+\s*$"
+)
+
+
+def parse_place_rows(tool_text: str) -> list[tuple[str, str]]:
+    """Read google_places rows. Each row is name, address, lat, and lon."""
+    rows = []
+    for raw in (tool_text or "").splitlines():
+        match = _PLACE_ROW.match(raw.strip())
+        if not match:
+            continue
+        name = match.group("name").strip()
+        address = match.group("address").strip()
+        if name:
+            rows.append((name, address))
+    return rows
+
+
+def render_places(tool_text: str) -> Markup | None:
+    """One visible line per place: name, then address. No coordinates."""
+    rows = parse_place_rows(tool_text)
+    if not rows:
+        return None
+    lines = []
+    for name, address in rows:
+        line = f"{name}, {address}" if address else name
+        lines.append(str(escape(line)))
+    return Markup("<br>\n".join(lines))
+
+
+def _plain_line(line: str) -> str:
+    text = line.strip()
+    text = re.sub(r"^[\-\*\d\.\)\s]+", "", text)
+    text = text.replace("**", "").replace("__", "").replace("`", "")
+    return text.strip()
+
+
+def _without_rewritten_places(text: str, places: list[tuple[str, str]]) -> str:
+    """Drop a model-written place list. Keep a sentence that only names the building."""
+    if not places or not text.strip():
+        return text
+    names = {name.strip().lower() for name, _ in places if name.strip()}
+    addresses = {
+        address.strip().lower()
+        for _, address in places
+        if address and len(address.strip()) >= 4
+    }
+    kept = []
+    for line in text.splitlines():
+        plain = _plain_line(line)
+        if not plain:
+            kept.append("")
+            continue
+        lowered = plain.lower()
+        if re.match(r"address\s*:", lowered):
+            continue
+        if lowered in names:
+            continue
+        if any(address in lowered for address in addresses):
+            continue
+        if any(
+            lowered.startswith(name + separator)
+            for name in names
+            for separator in (" ", ",", " -", " —", ":")
+        ):
+            continue
+        kept.append(line.rstrip())
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+    return cleaned
+
+
 def _history_answer(entry: dict) -> str:
     answer = entry.get("answer", "")
     if isinstance(answer, list):
@@ -367,7 +439,8 @@ Please answer the new question, taking into account the context from the previou
 """
     prompt = consolidated_prompt if conversation_history else prompted_question
 
-    content = []
+    pieces: list[tuple[str, str | Markup]] = []
+    shown_places: list[tuple[str, str]] = []
     for step in agent_executor.stream(
         {"messages": [HumanMessage(content=prompt)]},
         stream_mode="updates",
@@ -388,19 +461,33 @@ Please answer the new question, taking into account the context from the previou
             html_block, stripped_text, code = extract_and_remove_html(text)
             if code:
                 if stripped_text and not _is_model_map(stripped_text):
-                    content.append(process_markdown(_without_model_map(stripped_text)))
-                content.append(execute_generated_pdf(code))
+                    pieces.append(("md", _without_model_map(stripped_text)))
+                pieces.append(("html", execute_generated_pdf(code)))
                 continue
             if stripped_text:
                 visible = _without_model_chart(_without_model_map(stripped_text))
                 if visible and not _is_model_map(visible) and not _is_model_chart(visible):
-                    content.append(process_markdown(visible))
+                    pieces.append(("md", visible))
             if html_block and not _is_model_map(str(html_block)) and not _is_model_chart(str(html_block)):
-                content.append(html_block)
+                pieces.append(("html", html_block))
 
         for msg in _iter_messages(step.get("tools") or {}):
             name, tool_html = _named_content(msg)
-            if name in {"show_map", "show_chart"} and tool_html.strip():
-                content.append(Markup(tool_html.strip()))
+            if name == "google_places" and tool_html.strip():
+                rows = parse_place_rows(tool_html)
+                rendered = render_places(tool_html)
+                if rendered is not None:
+                    pieces.append(("html", rendered))
+                    shown_places.extend(rows)
+            elif name in {"show_map", "show_chart"} and tool_html.strip():
+                pieces.append(("html", Markup(tool_html.strip())))
 
+    content = []
+    for kind, value in pieces:
+        if kind == "md":
+            text = _without_rewritten_places(str(value), shown_places)
+            if text.strip():
+                content.append(process_markdown(text))
+        else:
+            content.append(value)
     return content
